@@ -1,0 +1,614 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#include <WiFi.h>
+#include "esp_wifi.h"
+#include "esp_bt.h"
+
+#include "esp_sleep.h"
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+// =====================================================
+// XIAO ESP32-C3 OLED
+// =====================================================
+
+#define OLED_SDA 6       // D4
+#define OLED_SCL 5       // D3
+#define OLED_ADDRESS 0x3C
+
+Adafruit_SSD1306 display(
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  &Wire,
+  -1
+);
+
+
+// =====================================================
+// EYE POSITION
+// =====================================================
+
+const int leftX = 32;
+const int rightX = 96;
+const int centerY = 32;
+
+float currentX = 0;
+float currentY = 0;
+
+float targetX = 0;
+float targetY = 0;
+
+
+// =====================================================
+// EYE SIZE
+// =====================================================
+
+float currentWidth = 32;
+float currentHeight = 40;
+
+float targetWidth = 32;
+float targetHeight = 40;
+
+
+// =====================================================
+// TIMERS
+// =====================================================
+
+unsigned long actionStart = 0;
+unsigned long actionDuration = 0;
+
+unsigned long nextBlink = 0;
+unsigned long nextSleep = 0;
+
+unsigned long lastFrame = 0;
+
+
+// =====================================================
+// DISPLAY
+// =====================================================
+
+const unsigned long FRAME_TIME = 50;
+
+
+// =====================================================
+// STATE
+// =====================================================
+
+bool blinking = false;
+
+
+// =====================================================
+// DRAW ONE EYE
+// =====================================================
+
+void drawEye(
+  float x,
+  float y,
+  float w,
+  float h
+) {
+
+  display.fillRoundRect(
+    (int)(x - w / 2),
+    (int)(y - h / 2),
+    (int)w,
+    (int)h,
+    10,
+    WHITE
+  );
+}
+
+
+// =====================================================
+// DRAW BOTH EYES
+// =====================================================
+
+void drawEyes() {
+
+  display.clearDisplay();
+
+  if (blinking) {
+
+    // Closed left eye
+    display.fillRoundRect(
+      leftX - 16,
+      centerY - 2,
+      32,
+      5,
+      3,
+      WHITE
+    );
+
+    // Closed right eye
+    display.fillRoundRect(
+      rightX - 16,
+      centerY - 2,
+      32,
+      5,
+      3,
+      WHITE
+    );
+
+  } else {
+
+    // Left eye
+    drawEye(
+      leftX + currentX,
+      centerY + currentY,
+      currentWidth,
+      currentHeight
+    );
+
+    // Right eye
+    drawEye(
+      rightX + currentX,
+      centerY + currentY,
+      currentWidth,
+      currentHeight
+    );
+  }
+
+  display.display();
+
+  lastFrame = millis();
+}
+
+
+// =====================================================
+// OLED OFF
+// =====================================================
+
+void oledOff() {
+
+  display.clearDisplay();
+  display.display();
+
+  delay(10);
+
+  display.ssd1306_command(
+    SSD1306_DISPLAYOFF
+  );
+}
+
+
+// =====================================================
+// OLED ON
+// =====================================================
+
+void oledOn() {
+
+  display.ssd1306_command(
+    SSD1306_DISPLAYON
+  );
+
+  delay(10);
+
+  drawEyes();
+}
+
+
+// =====================================================
+// RANDOM EYE MOVEMENT
+// =====================================================
+
+void chooseRandomLook() {
+
+  int direction = random(0, 11);
+
+  switch (direction) {
+
+    case 0:
+      // Center
+      targetX = 0;
+      targetY = 0;
+      break;
+
+    case 1:
+      // Left
+      targetX = -8;
+      targetY = 0;
+      break;
+
+    case 2:
+      // Right
+      targetX = 8;
+      targetY = 0;
+      break;
+
+    case 3:
+      // Up
+      targetX = 0;
+      targetY = -7;
+      break;
+
+    case 4:
+      // Down
+      targetX = 0;
+      targetY = 7;
+      break;
+
+    case 5:
+      // Upper-left
+      targetX = -7;
+      targetY = -6;
+      break;
+
+    case 6:
+      // Upper-right
+      targetX = 7;
+      targetY = -6;
+      break;
+
+    case 7:
+      // Lower-left
+      targetX = -7;
+      targetY = 6;
+      break;
+
+    case 8:
+      // Lower-right
+      targetX = 7;
+      targetY = 6;
+      break;
+
+    case 9:
+      // Small left movement
+      targetX = -4;
+      targetY = random(-3, 4);
+      break;
+
+    case 10:
+      // Small right movement
+      targetX = 4;
+      targetY = random(-3, 4);
+      break;
+  }
+
+
+  // Random eye size
+
+  int size = random(0, 5);
+
+  switch (size) {
+
+    case 0:
+      targetWidth = 32;
+      targetHeight = 40;
+      break;
+
+    case 1:
+      targetWidth = 30;
+      targetHeight = 38;
+      break;
+
+    case 2:
+      targetWidth = 34;
+      targetHeight = 42;
+      break;
+
+    case 3:
+      targetWidth = 30;
+      targetHeight = 44;
+      break;
+
+    case 4:
+      targetWidth = 35;
+      targetHeight = 38;
+      break;
+  }
+
+
+  // Stay stationary for a random time
+
+  actionDuration = random(
+    1500,
+    6500
+  );
+
+  actionStart = millis();
+}
+
+
+// =====================================================
+// BLINK
+// =====================================================
+
+void blink() {
+
+  blinking = true;
+
+  drawEyes();
+
+  delay(
+    random(70, 120)
+  );
+
+  blinking = false;
+
+  drawEyes();
+
+  delay(
+    random(100, 250)
+  );
+
+
+  // Occasional double blink
+
+  if (random(0, 7) == 0) {
+
+    delay(
+      random(120, 400)
+    );
+
+    blinking = true;
+
+    drawEyes();
+
+    delay(
+      random(70, 120)
+    );
+
+    blinking = false;
+
+    drawEyes();
+  }
+
+
+  // Next random blink
+
+  nextBlink =
+    millis() +
+    random(
+      3000,
+      9000
+    );
+}
+
+
+// =====================================================
+// LOW POWER SLEEP
+// =====================================================
+
+void enterSleep() {
+
+  // Close eyes
+
+  blinking = true;
+
+  drawEyes();
+
+  delay(150);
+
+
+  // Turn OLED completely off
+
+  oledOff();
+
+
+  // Sleep 5–15 seconds
+
+  uint64_t sleepTime =
+    (uint64_t)random(5, 16) *
+    1000000ULL;
+
+  esp_sleep_enable_timer_wakeup(
+    sleepTime
+  );
+
+  esp_light_sleep_start();
+
+
+  // Wake up
+
+  oledOn();
+
+  blinking = false;
+
+
+  // Choose new random position
+
+  chooseRandomLook();
+
+
+  // Reset blink timer
+
+  nextBlink =
+    millis() +
+    random(
+      3000,
+      9000
+    );
+
+
+  // Wait before next sleep
+
+  nextSleep =
+    millis() +
+    random(
+      60000,
+      180000
+    );
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  // ===================================================
+  // DISABLE WI-FI
+  // ===================================================
+
+  WiFi.mode(WIFI_OFF);
+
+  esp_wifi_stop();
+
+  esp_wifi_deinit();
+
+
+  // ===================================================
+  // DISABLE BLUETOOTH
+  // ===================================================
+
+  btStop();
+
+
+  // ===================================================
+  // I2C
+  // ===================================================
+
+  Wire.begin(
+    OLED_SDA,
+    OLED_SCL
+  );
+
+
+  // ===================================================
+  // OLED
+  // ===================================================
+
+  if (!display.begin(
+        SSD1306_SWITCHCAPVCC,
+        OLED_ADDRESS
+      )) {
+
+    while (true) {
+      delay(1000);
+    }
+  }
+
+
+  // ===================================================
+  // RANDOM SEED
+  // ===================================================
+
+  randomSeed(
+    micros()
+  );
+
+
+  // ===================================================
+  // INITIAL EYES
+  // ===================================================
+
+  chooseRandomLook();
+
+
+  // ===================================================
+  // FIRST BLINK
+  // ===================================================
+
+  nextBlink =
+    millis() +
+    random(
+      3000,
+      6000
+    );
+
+
+  // ===================================================
+  // FIRST SLEEP
+  // ===================================================
+
+  nextSleep =
+    millis() +
+    random(
+      60000,
+      120000
+    );
+
+
+  // Draw eyes
+
+  drawEyes();
+}
+
+
+// =====================================================
+// MAIN LOOP
+// =====================================================
+
+void loop() {
+
+  unsigned long now = millis();
+
+
+  // ===================================================
+  // SLEEP
+  // ===================================================
+
+  if (now >= nextSleep) {
+
+    enterSleep();
+
+    return;
+  }
+
+
+  // ===================================================
+  // SMOOTH MOVEMENT
+  // ===================================================
+
+  currentX +=
+    (targetX - currentX) * 0.08;
+
+  currentY +=
+    (targetY - currentY) * 0.08;
+
+
+  currentWidth +=
+    (targetWidth - currentWidth) * 0.05;
+
+  currentHeight +=
+    (targetHeight - currentHeight) * 0.05;
+
+
+  // ===================================================
+  // NEW RANDOM LOOK
+  // ===================================================
+
+  if (
+    now - actionStart >=
+    actionDuration
+  ) {
+
+    chooseRandomLook();
+  }
+
+
+  // ===================================================
+  // BLINK
+  // ===================================================
+
+  if (now >= nextBlink) {
+
+    blink();
+
+    return;
+  }
+
+
+  // ===================================================
+  // OLED FRAME LIMIT
+  // ===================================================
+
+  if (
+    now - lastFrame >=
+    FRAME_TIME
+  ) {
+
+    drawEyes();
+  }
+
+
+  // ===================================================
+  // SMALL CPU DELAY
+  // ===================================================
+
+  delay(5);
+}
