@@ -12,7 +12,7 @@
 #define SCREEN_HEIGHT 64
 
 // =====================================================
-// XIAO ESP32-C3 OLED
+// XIAO ESP32-C3 + Adafruit SSD1306 OLED
 // =====================================================
 
 #define OLED_SDA 6       // D4
