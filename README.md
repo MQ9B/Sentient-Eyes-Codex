@@ -4,3 +4,5 @@ Intended package deployment through Arduino IDE
 Must install esp32 by Espressif
 Must install Adafruit SSD1306 by Adafruit
 Must install Adafruit GFX Library by Adafruit
+
+Code has annotation for easier understanding
